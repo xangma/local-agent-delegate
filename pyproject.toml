@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "local-agent-delegate"
+version = "0.3.0"
+description = "Unofficial MCP server for delegating local coding-agent work to a configured local agent backend."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+local-agent-delegate-mcp = "local_agent_delegate.mcp:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+local_agent_delegate = ["backend_skills/delegate_scout/SKILL.md"]

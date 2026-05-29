@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "local-agent-delegate": {
+      "command": "local-agent-delegate-mcp"
+    }
+  }
+}

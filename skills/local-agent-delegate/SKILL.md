@@ -1,0 +1,114 @@
+---
+name: local-agent-delegate
+description: Use when delegating bounded local coding-agent tasks to a local backend from a supervising AI agent or MCP client, especially token-heavy repo exploration, file comparisons, audits, compact first-pass findings, or candidate patches. Triggers on Local Agent Delegate, token saving, remote model compute with local file access, local Pi backend, or asking a local agent to inspect or patch a local repo.
+---
+
+# Local Agent Delegate
+
+Use Local Agent Delegate when a supervising AI agent needs a local coding-agent
+helper that can inspect the current local workspace while using remote model
+compute. The current backend is the Pi CLI.
+
+## Decision Boundary
+
+- Honor `LOCAL_AGENT_DELEGATE_LEAN`, `LOCAL_AGENT_DELEGATE_GOAL`, and `LOCAL_AGENT_DELEGATE_THINKING`; if unsure, call
+  `local_agent_delegate_policy`.
+- Do not inspect `LOCAL_AGENT_DELEGATE_*` with shell commands such as `printenv`; these
+  settings are scoped to the MCP server process and may not be present in a
+  project shell.
+- Use `local_agent_delegate_run_start` for read-only local repo investigation, then poll
+  `local_agent_delegate_job_status`, wait with `local_agent_delegate_job_wait`, and fetch
+  `local_agent_delegate_job_result`.
+- When the goal is `save-on-tokens`, do not duplicate the backend's broad
+  exploration in the supervising agent while the job is running. After
+  `local_agent_delegate_run_start`, wait for the compact result before broad code-index, `rg`, `find`, `ls`,
+  `sed`, or `cat` exploration in the primary agent.
+- Use `local_agent_delegate_patch_start` for self-contained edits that can be reviewed
+  as a diff, then poll/fetch the same job lifecycle tools.
+- Completed `local_agent_delegate_job_wait` or `local_agent_delegate_job_result` calls with
+  `include_details=false` return the final text plus minimal counters and
+  artifact paths. They omit activity tails, session metadata, raw stdout/stderr
+  JSON tails, and large diffs.
+- For long jobs, prefer `local_agent_delegate_job_wait` with a bounded timeout. If
+  polling, inspect compact `activity_tail`, `running_actions`, `counters`, and
+  artifact paths; cancel the job if it is clearly off-track.
+- For token saving, call `local_agent_delegate_job_wait` with `include_details=false`
+  first. Use `include_details=true` only when diagnosing a failed or off-track
+  job.
+- Do not call `local_agent_delegate_run` or `local_agent_delegate_patch`. They were removed from
+  the tool surface because synchronous backend calls can exceed common tool-call
+  timeouts.
+- Do not use a remote backend for local file work. The backend must run on the
+  machine with the files it needs to inspect.
+
+## Verification Budget
+
+- After the backend returns, verify only the named files, symbols, commands, or claims
+  needed for correctness.
+- If broader primary-agent exploration is still needed, first state why the
+  delegated result was insufficient, then continue with the smallest useful search.
+- Treat `counters.estimated_primary_tokens_avoided_approx` as a rough trend
+  signal for whether delegation avoided primary-agent context, not billing data.
+
+## Delegation Level
+
+- `off`: do not delegate unless the user explicitly asks.
+- `conservative`: use the backend for high-token read-only repo investigation when the
+  question is clearly bounded.
+- `balanced`: use the backend for token-heavy read-only exploration and comparisons;
+  patch mode is for reviewable self-contained diffs.
+- `aggressive`: prefer the backend for first-pass repo exploration, comparisons, audits,
+  and candidate patches while still reviewing returned diffs.
+
+## Delegation Goal
+
+- `balanced`: use the backend when it is likely to save time or provide useful confidence;
+  keep tasks and returned results scoped.
+- `save-on-tokens`: use the backend for token-heavy local exploration; ask for compact
+  findings and avoid duplicating broad file reads in the supervising agent
+  unless needed for verification.
+- `parallel-review`: use the backend as an independent second opinion while the
+  supervising agent may continue local work; this favors confidence and
+  wall-clock overlap over token savings.
+- `unrestricted`: let the backend explore broadly within the explicit task and safety
+  rules; still monitor, cancel off-track jobs, and verify important claims.
+
+## Thinking
+
+- `default`: Local Agent Delegate does not pass a `--thinking` flag.
+- `off`, `minimal`, `low`, `medium`, `high`, `xhigh`: Local Agent Delegate passes the
+  configured value as `pi --thinking <value>`. Per-job `thinking` can override
+  the MCP server default for hard tasks.
+- For token saving, prefer `default` or `off` first. Escalate a single job to
+  higher thinking only after the scope is narrow enough to avoid large repeated
+  tool context.
+
+## Safety Rules
+
+- Always pass an explicit local `cwd`.
+- Treat backend output as advisory; the supervising agent must verify important
+  claims.
+- For edits, prefer `local_agent_delegate_patch_start`; it uses a temporary git worktree
+  and returns a diff without applying it to the current tree.
+- If a delegated job is no longer useful, call `local_agent_delegate_job_cancel` instead of
+  abandoning a long-running request.
+- Do not ask the backend to handle secrets, credentials, production incident conclusions,
+  or final correctness decisions.
+
+## Good Uses
+
+- Ask the backend to map a local subsystem and report likely files/functions to inspect.
+- Ask the backend to compare several files or implementations and return compact findings.
+- Ask the backend to produce a candidate patch when the requested change is self-contained
+  and the returned diff can be reviewed.
+- Ask the backend for a second-pass critique after the supervising agent has narrowed the
+  scope.
+
+## Avoid
+
+- Broad, underspecified tasks.
+- Running broad supervising-agent shell exploration in parallel with the backend when the
+  objective is saving primary-agent context.
+- Dirty-tree patch tasks where uncommitted local changes matter.
+- Remote-host file assumptions. Backend file access is local to the machine
+  running the MCP server.
