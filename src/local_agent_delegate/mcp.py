@@ -23,7 +23,7 @@ MODEL_SCHEMA = {"type": "string", "description": "Optional backend model name; o
 TOOLS = [
     {
         "name": "local_agent_delegate_policy",
-        "description": "Return the configured delegation level/goal from the MCP server env; use this instead of shell printenv.",
+        "description": "Return the configured delegation level/goal and re-delegation threshold from the MCP server env; use this instead of shell printenv.",
         "inputSchema": {
             "type": "object",
             "properties": {},
@@ -44,7 +44,7 @@ TOOLS = [
     },
     {
         "name": "local_agent_delegate_run_start",
-        "description": "Start a long-running read-only local-agent job and return immediately with a job id. When the goal is save-on-tokens, wait for the compact result before broad local exploration.",
+        "description": "Start a long-running read-only local-agent job and return immediately with a job id. Use again for distinct follow-up exploration phases when the policy threshold is met. When the goal is save-on-tokens, wait for the compact result before broad local exploration.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -89,7 +89,7 @@ TOOLS = [
     },
     {
         "name": "local_agent_delegate_job_result",
-        "description": "Fetch the compact final result for a delegated job; details are compact diagnostics and artifact paths only.",
+        "description": "Fetch the compact final result for a delegated job; details are compact diagnostics and artifact paths only. Results may have result_state=partial_timeout when the backend timed out after producing useful text.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -106,7 +106,7 @@ TOOLS = [
     },
     {
         "name": "local_agent_delegate_job_wait",
-        "description": "Wait for a delegated job to complete or for a bounded timeout, returning compact result/status.",
+        "description": "Wait for a delegated job to complete or for a bounded timeout, returning compact result/status. Completed jobs may return result_state=partial_timeout when the backend timed out after producing useful text.",
         "inputSchema": {
             "type": "object",
             "properties": {

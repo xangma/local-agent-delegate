@@ -94,6 +94,7 @@ class McpTests(unittest.TestCase):
     def test_policy_reports_token_efficient_profile(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with Env(
+                LOCAL_AGENT_DELEGATE_LEAN="balanced",
                 LOCAL_AGENT_DELEGATE_GOAL="save-on-tokens",
                 LOCAL_AGENT_DELEGATE_TARGET_RESULT_CHARS="77",
                 LOCAL_AGENT_DELEGATE_ARTIFACT_ROOT=str(Path(tmp) / "artifacts"),
@@ -106,6 +107,10 @@ class McpTests(unittest.TestCase):
                 self.assertIn("bundled delegate scout", policy["backend_resource_mode"])
                 self.assertIn("wait", policy["workflow_guidance"])
                 self.assertIn("backend was insufficient", policy["verification_budget"])
+                self.assertIn("2+ file reads/searches", policy["redelegation_threshold"])
+                self.assertIn("Scout -> verify", policy["delegation_loop"])
+                self.assertIn("Lower", policy["goal_redelegation_guidance"])
+                self.assertIn("Re-delegate", policy["level_redelegation_guidance"])
 
     def test_async_run_returns_compact_result_and_artifacts(self) -> None:
         body = """cat <<'JSON'
@@ -353,6 +358,34 @@ PY
     def test_job_wait_rejects_oversized_timeout(self) -> None:
         with self.assertRaisesRegex(Exception, "wait_timeout must be between 1 and 90"):
             handle_tool("local_agent_delegate_job_wait", {"job_id": "missing", "wait_timeout": 120000})
+
+    def test_backend_timeout_with_text_returns_partial_timeout(self) -> None:
+        body = """cat <<'JSON'
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Partial map\\n"}]}}
+JSON
+sleep 30
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_pi = write_fake_pi(tmp, body)
+            with Env(LOCAL_AGENT_DELEGATE_PI_BIN=str(fake_pi), LOCAL_AGENT_DELEGATE_ARTIFACT_ROOT=str(Path(tmp) / "artifacts")):
+                started = handle_tool("local_agent_delegate_run_start", {"prompt": "inspect", "cwd": tmp, "timeout": 1})
+                result = handle_tool("local_agent_delegate_job_wait", {"job_id": str(started["job_id"]), "wait_timeout": 5})
+                self.assertEqual(result["state"], "succeeded")
+                self.assertEqual(result["result"]["result_state"], "partial_timeout")
+                self.assertEqual(result["result"]["text"], "Partial map\n")
+                self.assertTrue(result["result"]["timed_out"])
+                self.assertIn("command timed out", result["result"]["timeout_error"])
+                self.assertIn("backend_returncode", result)
+
+    def test_backend_timeout_without_text_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_pi = write_fake_pi(tmp, "sleep 30\n")
+            with Env(LOCAL_AGENT_DELEGATE_PI_BIN=str(fake_pi), LOCAL_AGENT_DELEGATE_ARTIFACT_ROOT=str(Path(tmp) / "artifacts")):
+                started = handle_tool("local_agent_delegate_run_start", {"prompt": "inspect", "cwd": tmp, "timeout": 1})
+                result = handle_tool("local_agent_delegate_job_wait", {"job_id": str(started["job_id"]), "wait_timeout": 5})
+                self.assertEqual(result["state"], "failed")
+                self.assertIn("command timed out after 1s", result["error"])
+                self.assertNotIn("result", result)
 
     def test_json_retry_failure_fails_job_with_compact_error(self) -> None:
         body = """cat <<'JSON'

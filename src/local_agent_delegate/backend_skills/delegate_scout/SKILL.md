@@ -20,6 +20,10 @@ findings.
 - Prefer targeted searches and bounded reads around relevant symbols.
 - If a tool result is large or context pressure is likely, stop exploring and
   return the best compact map plus what the supervising agent should verify next.
+- If time is running short, return useful partial findings instead of continuing
+  exploration; the caller can surface them as a `partial_timeout` result.
+- When useful, include 1-3 narrow follow-up delegation prompts for the supervising
+  agent to run next.
 - Do not make final correctness decisions for the supervising agent.
 - For patch tasks, make the smallest coherent change and summarize changed
   files plus checks run.

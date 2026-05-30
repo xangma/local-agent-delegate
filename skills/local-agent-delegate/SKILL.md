@@ -12,7 +12,7 @@ compute. The current backend is the Pi CLI.
 ## Decision Boundary
 
 - Honor `LOCAL_AGENT_DELEGATE_LEAN`, `LOCAL_AGENT_DELEGATE_GOAL`, and `LOCAL_AGENT_DELEGATE_THINKING`; if unsure, call
-  `local_agent_delegate_policy`.
+  `local_agent_delegate_policy` and follow its `redelegation_threshold`.
 - Do not inspect `LOCAL_AGENT_DELEGATE_*` with shell commands such as `printenv`; these
   settings are scoped to the MCP server process and may not be present in a
   project shell.
@@ -23,12 +23,20 @@ compute. The current backend is the Pi CLI.
   exploration in the supervising agent while the job is running. After
   `local_agent_delegate_run_start`, wait for the compact result before broad code-index, `rg`, `find`, `ls`,
   `sed`, or `cat` exploration in the primary agent.
+- Re-delegate for each new bounded exploration phase when the expected local
+  inspection meets `redelegation_threshold`. Verify the previous result's named
+  evidence first, then delegate the next broad subtask instead of expanding
+  primary-agent reads.
 - Use `local_agent_delegate_patch_start` for self-contained edits that can be reviewed
   as a diff, then poll/fetch the same job lifecycle tools.
 - Completed `local_agent_delegate_job_wait` or `local_agent_delegate_job_result` calls with
   `include_details=false` return the final text plus minimal counters and
   artifact paths. They omit activity tails, session metadata, raw stdout/stderr
   JSON tails, and large diffs.
+- A completed result may have `result_state: "partial_timeout"` when the backend
+  timed out after producing useful assistant text or a patch diff. Use the
+  partial result as advisory evidence before deciding whether to narrow and
+  re-delegate.
 - For long jobs, prefer `local_agent_delegate_job_wait` with a bounded timeout. If
   polling, inspect compact `activity_tail`, `running_actions`, `counters`, and
   artifact paths; cancel the job if it is clearly off-track.
@@ -46,9 +54,24 @@ compute. The current backend is the Pi CLI.
 - After the backend returns, verify only the named files, symbols, commands, or claims
   needed for correctness.
 - If broader primary-agent exploration is still needed, first state why the
-  delegated result was insufficient, then continue with the smallest useful search.
+  delegated result was insufficient. If the follow-up still crosses
+  `redelegation_threshold`, start a narrower delegated job; otherwise continue
+  with the smallest useful local search.
 - Treat `counters.estimated_primary_tokens_avoided_approx` as a rough trend
   signal for whether delegation avoided primary-agent context, not billing data.
+
+## Re-delegation Threshold
+
+- `off`: do not re-delegate unless the user explicitly asks.
+- `conservative`: re-delegate only for clearly bounded follow-up work that would
+  otherwise require about 6+ file reads/searches, cross-module tracing, or an
+  independent second review.
+- `balanced`: re-delegate when a new bounded subtask would otherwise require
+  about 3+ file reads/searches or an unfamiliar subsystem.
+- `aggressive`: re-delegate when a new bounded subtask would otherwise require
+  about 2+ file reads/searches or any new subsystem after the first scout.
+- `LOCAL_AGENT_DELEGATE_GOAL=save-on-tokens` lowers the active threshold by one
+  level, except `off` stays off.
 
 ## Delegation Level
 
@@ -99,6 +122,8 @@ compute. The current backend is the Pi CLI.
 
 - Ask the backend to map a local subsystem and report likely files/functions to inspect.
 - Ask the backend to compare several files or implementations and return compact findings.
+- Ask the backend to inspect the next bounded subtask discovered during
+  verification when it crosses `redelegation_threshold`.
 - Ask the backend to produce a candidate patch when the requested change is self-contained
   and the returned diff can be reviewed.
 - Ask the backend for a second-pass critique after the supervising agent has narrowed the

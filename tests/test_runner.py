@@ -37,6 +37,32 @@ class RunnerTests(unittest.TestCase):
             else:
                 os.environ["LOCAL_AGENT_DELEGATE_LEAN"] = old_value
 
+    def test_policy_redelegation_threshold_uses_lean_and_goal(self) -> None:
+        old_level = os.environ.get("LOCAL_AGENT_DELEGATE_LEAN")
+        old_goal = os.environ.get("LOCAL_AGENT_DELEGATE_GOAL")
+        cases = [
+            ("off", "balanced", "explicit user request only"),
+            ("conservative", "balanced", "6+ file reads/searches"),
+            ("balanced", "balanced", "3+ file reads/searches"),
+            ("aggressive", "balanced", "2+ file reads/searches"),
+            ("conservative", "save-on-tokens", "3+ file reads/searches"),
+            ("balanced", "save-on-tokens", "2+ file reads/searches"),
+        ]
+        try:
+            for level, goal, expected in cases:
+                os.environ["LOCAL_AGENT_DELEGATE_LEAN"] = level
+                os.environ["LOCAL_AGENT_DELEGATE_GOAL"] = goal
+                self.assertIn(expected, policy_summary()["redelegation_threshold"])
+        finally:
+            if old_level is None:
+                os.environ.pop("LOCAL_AGENT_DELEGATE_LEAN", None)
+            else:
+                os.environ["LOCAL_AGENT_DELEGATE_LEAN"] = old_level
+            if old_goal is None:
+                os.environ.pop("LOCAL_AGENT_DELEGATE_GOAL", None)
+            else:
+                os.environ["LOCAL_AGENT_DELEGATE_GOAL"] = old_goal
+
     def test_default_model_honors_env(self) -> None:
         old_value = os.environ.get("LOCAL_AGENT_DELEGATE_MODEL")
         try:

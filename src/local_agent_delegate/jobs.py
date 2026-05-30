@@ -63,6 +63,8 @@ class JobCancelled(Exception):
 class AgentProcessResult:
     command: list[str]
     returncode: int
+    timed_out: bool = False
+    error: str | None = None
 
 
 @dataclass
@@ -327,6 +329,9 @@ class JobManager:
                         job.state = "failed"
                         job.error = f"backend reported error: {job.backend_terminal_error}"
                         job.result = result
+                elif result.get("result_state") == "partial_timeout":
+                    job.state = "succeeded"
+                    job.result = result
                 elif backend_returncode(result) != 0:
                     job.state = "failed"
                     job.error = f"backend exited with return code {backend_returncode(result)}"
@@ -360,13 +365,18 @@ class JobManager:
         result = self._run_process(job, command, workdir, self._main_capture(job), timeout=job.timeout)
         job.backend_returncode = result.returncode
         text_result = self._result_text(job, workdir)
+        if result.timed_out and not text_has_content(text_result["text"]):
+            raise LocalAgentDelegateError(result.error or f"command timed out after {job.timeout}s: {command_summary(command)}")
+        result_state = "partial_timeout" if result.timed_out else text_result["result_state"]
         return {
             "type": "read_only",
-            "result_state": text_result["result_state"],
+            "result_state": result_state,
             "text": text_result["text"],
             "target_chars": target_result_chars(),
             "artifacts": artifact_paths(job),
             "backend_returncode": result.returncode,
+            "timed_out": result.timed_out,
+            "timeout_error": result.error,
         }
 
     def _run_patch(self, job: DelegateJob, root: Path, base_ref: str, prompt: str) -> dict[str, Any]:
@@ -386,14 +396,21 @@ class JobManager:
                 status_text = git_output(["git", "-C", str(worktree), "status", "--short"], allow_failure=True)
                 shortstat = git_output(["git", "-C", str(worktree), "diff", "--shortstat", "--no-ext-diff"], allow_failure=True)
                 text_result = self._result_text(job, worktree)
+                if pi_result.timed_out and not text_has_content(text_result["text"]) and not diff.strip():
+                    raise LocalAgentDelegateError(
+                        pi_result.error or f"command timed out after {job.timeout}s: {command_summary(command)}"
+                    )
+                result_state = "partial_timeout" if pi_result.timed_out else text_result["result_state"]
                 return {
                     "type": "patch",
-                    "result_state": text_result["result_state"],
+                    "result_state": result_state,
                     "summary_text": text_result["text"],
                     "target_chars": target_result_chars(),
                     "source_repo": str(root),
                     "base_ref": base_ref,
                     "backend_returncode": pi_result.returncode,
+                    "timed_out": pi_result.timed_out,
+                    "timeout_error": pi_result.error,
                     "diff_artifact": str(job.diff_path),
                     "diff_stats": {
                         "bytes": job.diff_path.stat().st_size,
@@ -494,7 +511,12 @@ class JobManager:
                 proc.wait(timeout=TERMINATE_GRACE_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
-            raise LocalAgentDelegateError(f"command timed out after {timeout}s: {command_summary(command)}") from exc
+            return AgentProcessResult(
+                command=command,
+                returncode=proc.returncode if proc.returncode is not None else -1,
+                timed_out=True,
+                error=f"command timed out after {timeout}s: {command_summary(command)}",
+            )
         finally:
             for thread in capture_threads:
                 thread.join(timeout=1)
@@ -946,6 +968,10 @@ def result_for_response(job: DelegateJob, *, include_details: bool) -> dict[str,
     else:
         keys = ("type", "result_state", "text")
     data = {key: result[key] for key in keys if key in result}
+    if result.get("timed_out") is True:
+        data["timed_out"] = True
+        if "timeout_error" in result:
+            data["timeout_error"] = result["timeout_error"]
     if result.get("result_state") == "result_oversized" and "target_chars" in result:
         data["target_chars"] = result["target_chars"]
     if "recovered_error" in result:
@@ -1111,9 +1137,13 @@ def result_has_complete_text(result: dict[str, Any]) -> bool:
         return False
     for key in ("text", "summary_text"):
         value = result.get(key)
-        if isinstance(value, str) and value.strip():
+        if text_has_content(value):
             return True
     return False
+
+
+def text_has_content(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def read_text_if_exists(path: Path) -> str:

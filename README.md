@@ -94,6 +94,19 @@ Common environment variables:
 - `LOCAL_AGENT_DELEGATE_TARGET_RESULT_CHARS`: defaults to `12000`.
 - `LOCAL_AGENT_DELEGATE_JOB_TTL_SECONDS`: defaults to one hour.
 
+`LOCAL_AGENT_DELEGATE_LEAN` also controls when a primary agent should
+re-delegate a follow-up exploration phase:
+
+- `off`: explicit user request only.
+- `conservative`: about 6+ file reads/searches, cross-module tracing, or an
+  independent second review.
+- `balanced`: about 3+ file reads/searches or an unfamiliar subsystem.
+- `aggressive`: about 2+ file reads/searches or any new subsystem after the
+  first scout.
+
+`LOCAL_AGENT_DELEGATE_GOAL=save-on-tokens` lowers that threshold by one level,
+except `off` remains off.
+
 Generic MCP config:
 
 ```json
@@ -191,12 +204,17 @@ Before broad or token-heavy repo exploration, call
 `local_agent_delegate_policy`; if it allows delegation, start a bounded
 read-only scout job with `local_agent_delegate_run_start`, wait with
 `local_agent_delegate_job_wait include_details=false`, then verify only the
-specific files, symbols, commands, or claims that matter.
+specific files, symbols, commands, or claims that matter. For each later
+exploration phase, compare the expected local file reads/searches to
+`redelegation_threshold`; if it meets the threshold, start a narrower follow-up
+delegated job instead of expanding primary-agent exploration.
 ```
 
 ## Tools
 
-- `local_agent_delegate_policy`: return the active delegation policy.
+- `local_agent_delegate_policy`: return the active delegation policy, including
+  `redelegation_threshold`, `level_redelegation_guidance`,
+  `goal_redelegation_guidance`, and the recommended delegation loop.
 - `local_agent_delegate_status`: check backend and model availability.
 - `local_agent_delegate_run_start`: start a read-only job and return a `job_id`.
 - `local_agent_delegate_patch_start`: start a patch job in a disposable worktree
@@ -204,24 +222,31 @@ specific files, symbols, commands, or claims that matter.
 - `local_agent_delegate_job_status`: inspect compact job state, activity,
   counters, session metadata, and artifact paths.
 - `local_agent_delegate_job_wait`: wait for completion or a bounded timeout.
-- `local_agent_delegate_job_result`: fetch compact final output.
+- `local_agent_delegate_job_result`: fetch compact final output. Result states
+  include `complete`, `result_oversized`, and `partial_timeout`; the last means
+  the backend timed out after producing useful assistant text or a patch diff.
 - `local_agent_delegate_job_cancel`: cancel a running job.
 - `local_agent_delegate_jobs`: list retained jobs in the MCP server process.
 
 ## Token-Saving Workflow
 
 When the goal is to save primary-agent context, use the backend as a scout
-rather than as a parallel transcript source:
+rather than as a parallel transcript source. Reuse it for new bounded
+exploration phases when the policy threshold says the follow-up is large enough:
 
 1. Call `local_agent_delegate_policy`.
-2. Start one bounded read-only scout job with `local_agent_delegate_run_start`.
+2. Start a bounded read-only scout job with `local_agent_delegate_run_start`.
 3. Wait with `local_agent_delegate_job_wait` and `include_details=false`.
 4. Read the compact result first.
 5. Verify only the specific files, symbols, commands, or claims that matter.
-6. If broader exploration is still needed, explicitly state that the scout was
-   insufficient and why before continuing.
-7. Use `include_details=true` only to diagnose failed or off-track jobs.
-8. Escalate `thinking` only after the scope is narrow.
+6. If a new broad subtask remains, compare it to `redelegation_threshold`.
+7. If the threshold is met, start a narrower follow-up delegated job; otherwise
+   explicitly state why the scout was insufficient and continue with the
+   smallest useful local search.
+8. Treat `partial_timeout` as usable advisory evidence when it contains text or
+   a diff, then decide whether to narrow and re-delegate.
+9. Use `include_details=true` only to diagnose failed or off-track jobs.
+10. Escalate `thinking` only after the scope is narrow.
 
 Avoid running broad local `find`, `rg`, `sed`, or `cat` exploration in the
 supervising agent while the delegated job is doing the same exploration. That

@@ -41,6 +41,34 @@ GOAL_WORKFLOW_GUIDANCE = {
     "unrestricted": "Let the backend perform broad local-model work within the explicit task and safety rules; keep final evidence review in the primary agent.",
 }
 
+LEVEL_REDELEGATION_GUIDANCE = {
+    "off": "Do not re-delegate unless the user explicitly asks.",
+    "conservative": "Re-delegate only for clearly bounded follow-up work that would otherwise require broad, high-token local inspection.",
+    "balanced": "Re-delegate bounded follow-up exploration when a new subtask crosses the configured inspection threshold.",
+    "aggressive": "Prefer re-delegating follow-up exploration whenever a new bounded subtask would otherwise consume primary-agent context.",
+}
+
+GOAL_REDELEGATION_GUIDANCE = {
+    "balanced": "Use the threshold as a default; verify small follow-ups locally and re-delegate larger exploration phases.",
+    "save-on-tokens": "Lower the threshold by one level and re-delegate follow-up exploration instead of doing broad primary-agent searches.",
+    "parallel-review": "Use re-delegation for a separate second opinion, then compare conclusions locally rather than chaining many backend jobs.",
+    "unrestricted": "Re-delegate freely for new bounded subtasks within the explicit task and safety rules.",
+}
+
+REDELEGATION_THRESHOLDS = {
+    "off": "explicit user request only",
+    "conservative": "6+ file reads/searches, cross-module tracing, or an independent second review",
+    "balanced": "3+ file reads/searches or an unfamiliar subsystem",
+    "aggressive": "2+ file reads/searches or any new subsystem after the first scout",
+}
+
+SAVE_ON_TOKENS_REDELEGATION_THRESHOLDS = {
+    "off": REDELEGATION_THRESHOLDS["off"],
+    "conservative": REDELEGATION_THRESHOLDS["balanced"],
+    "balanced": REDELEGATION_THRESHOLDS["aggressive"],
+    "aggressive": REDELEGATION_THRESHOLDS["aggressive"],
+}
+
 GOAL_VERIFICATION_BUDGET = {
     "balanced": "Verify the specific files, symbols, commands, or claims needed for confidence.",
     "save-on-tokens": "After the delegated job returns, verify only the named files, symbols, commands, or claims needed for correctness. If broad exploration is still needed, state that the backend was insufficient and why before continuing.",
@@ -111,6 +139,12 @@ def goal_system_prompt() -> str:
     return GOAL_SYSTEM_PROMPTS[current_goal()]
 
 
+def redelegation_threshold(level: str, goal: str) -> str:
+    if goal == "save-on-tokens":
+        return SAVE_ON_TOKENS_REDELEGATION_THRESHOLDS[level]
+    return REDELEGATION_THRESHOLDS[level]
+
+
 def policy_summary() -> dict[str, str | int]:
     level = current_level()
     goal = current_goal()
@@ -124,6 +158,10 @@ def policy_summary() -> dict[str, str | int]:
         "goal_guidance": GOAL_GUIDANCE[goal],
         "workflow_guidance": GOAL_WORKFLOW_GUIDANCE[goal],
         "verification_budget": GOAL_VERIFICATION_BUDGET[goal],
+        "level_redelegation_guidance": LEVEL_REDELEGATION_GUIDANCE[level],
+        "goal_redelegation_guidance": GOAL_REDELEGATION_GUIDANCE[goal],
+        "redelegation_threshold": redelegation_threshold(level, goal),
+        "delegation_loop": "Scout -> verify named evidence -> before each new exploration phase, compare expected reads/searches to redelegation_threshold -> re-delegate if the threshold is met.",
         "allowed_goals": ", ".join(ALLOWED_GOALS),
         "default_goal": DEFAULT_GOAL,
         "thinking": thinking,
