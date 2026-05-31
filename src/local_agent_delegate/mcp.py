@@ -10,7 +10,7 @@ from .policy import ALLOWED_THINKING, policy_summary
 from .runner import LocalAgentDelegateError, status
 
 
-SERVER_INFO = {"name": "local-agent-delegate", "version": "0.3.0"}
+SERVER_INFO = {"name": "local-agent-delegate", "version": "0.3.1"}
 JSON_RPC_VERSION = "2.0"
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 MAX_TOOL_TEXT = 160_000
@@ -44,7 +44,7 @@ TOOLS = [
     },
     {
         "name": "local_agent_delegate_run_start",
-        "description": "Start a long-running read-only local-agent job and return immediately with a job id. Use again for distinct follow-up exploration phases when the policy threshold is met. When the goal is save-on-tokens, wait for the compact result before broad local exploration.",
+        "description": "Start a long-running read-only local-agent job and return immediately with a job id. Use again for distinct follow-up exploration phases when the policy threshold is met. When the goal is save-on-tokens, call local_agent_delegate_job_wait before primary-agent CodeGraph, rg, find, ls, sed, cat, or other local file exploration; do not start direct focused checks in parallel.",
         "inputSchema": {
             "type": "object",
             "properties": {

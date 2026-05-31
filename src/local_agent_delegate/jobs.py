@@ -13,7 +13,16 @@ import time
 from typing import Any, Callable
 import uuid
 
-from .policy import artifact_root, artifact_ttl_seconds, current_thinking, goal_system_prompt, target_result_chars
+from .policy import (
+    artifact_root,
+    artifact_ttl_seconds,
+    current_goal,
+    current_thinking,
+    goal_system_prompt,
+    parallel_primary_work_allowed,
+    post_start_guidance,
+    target_result_chars,
+)
 from .runner import (
     DEFAULT_TIMEOUT,
     PATCH_TOOLS,
@@ -308,8 +317,14 @@ class JobManager:
             self._jobs[job.job_id] = job
         thread.start()
         with self._lock:
+            goal = current_goal()
+            workflow_note = post_start_guidance(goal)
             return {
                 **self._snapshot_locked(job, include_details=False),
+                "goal": goal,
+                "parallel_primary_work_allowed": parallel_primary_work_allowed(goal),
+                "next_action": workflow_note,
+                "workflow_note": workflow_note,
                 "message": "poll with local_agent_delegate_job_status, wait with local_agent_delegate_job_wait, or fetch local_agent_delegate_job_result",
             }
 

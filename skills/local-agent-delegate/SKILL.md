@@ -19,10 +19,13 @@ compute. The current backend is the Pi CLI.
 - Use `local_agent_delegate_run_start` for read-only local repo investigation, then poll
   `local_agent_delegate_job_status`, wait with `local_agent_delegate_job_wait`, and fetch
   `local_agent_delegate_job_result`.
-- When the goal is `save-on-tokens`, do not duplicate the backend's broad
-  exploration in the supervising agent while the job is running. After
-  `local_agent_delegate_run_start`, wait for the compact result before broad code-index, `rg`, `find`, `ls`,
-  `sed`, or `cat` exploration in the primary agent.
+- When the goal is `save-on-tokens`, use a mandatory wait-first workflow. After
+  `local_agent_delegate_run_start`, immediately call
+  `local_agent_delegate_job_wait include_details=false` before primary-agent
+  code-index, `rg`, `find`, `ls`, `sed`, `cat`, or other local file exploration.
+  Do not start direct "focused checks" in parallel unless the user explicitly
+  requested parallel work or the job has returned, failed, timed out, or is
+  clearly off-track.
 - Re-delegate for each new bounded exploration phase when the expected local
   inspection meets `redelegation_threshold`. Verify the previous result's named
   evidence first, then delegate the next broad subtask instead of expanding
@@ -53,8 +56,9 @@ compute. The current backend is the Pi CLI.
 
 - After the backend returns, verify only the named files, symbols, commands, or claims
   needed for correctness.
-- If broader primary-agent exploration is still needed, first state why the
-  delegated result was insufficient. If the follow-up still crosses
+- If broader primary-agent exploration is still needed after the job returns,
+  fails, times out, or is clearly off-track, first state why the delegated
+  result was insufficient. If the follow-up still crosses
   `redelegation_threshold`, start a narrower delegated job; otherwise continue
   with the smallest useful local search.
 - Treat `counters.estimated_primary_tokens_avoided_approx` as a rough trend
@@ -132,8 +136,8 @@ compute. The current backend is the Pi CLI.
 ## Avoid
 
 - Broad, underspecified tasks.
-- Running broad supervising-agent shell exploration in parallel with the backend when the
-  objective is saving primary-agent context.
+- Running supervising-agent code-index or shell exploration in parallel with the
+  backend when the objective is saving primary-agent context.
 - Dirty-tree patch tasks where uncommitted local changes matter.
 - Remote-host file assumptions. Backend file access is local to the machine
   running the MCP server.

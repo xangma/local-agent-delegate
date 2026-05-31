@@ -204,8 +204,11 @@ Before broad or token-heavy repo exploration, call
 `local_agent_delegate_policy`; if it allows delegation, start a bounded
 read-only scout job with `local_agent_delegate_run_start`, wait with
 `local_agent_delegate_job_wait include_details=false`, then verify only the
-specific files, symbols, commands, or claims that matter. For each later
-exploration phase, compare the expected local file reads/searches to
+specific files, symbols, commands, or claims that matter. When
+`LOCAL_AGENT_DELEGATE_GOAL=save-on-tokens`, do not run primary-agent code-index,
+`rg`, `find`, `ls`, `sed`, `cat`, or other local file exploration while the
+delegated job is running unless the user explicitly requested parallel work. For
+each later exploration phase, compare the expected local file reads/searches to
 `redelegation_threshold`; if it meets the threshold, start a narrower follow-up
 delegated job instead of expanding primary-agent exploration.
 ```
@@ -214,7 +217,8 @@ delegated job instead of expanding primary-agent exploration.
 
 - `local_agent_delegate_policy`: return the active delegation policy, including
   `redelegation_threshold`, `level_redelegation_guidance`,
-  `goal_redelegation_guidance`, and the recommended delegation loop.
+  `goal_redelegation_guidance`, `post_start_guidance`,
+  `parallel_primary_work_allowed`, and the recommended delegation loop.
 - `local_agent_delegate_status`: check backend and model availability.
 - `local_agent_delegate_run_start`: start a read-only job and return a `job_id`.
 - `local_agent_delegate_patch_start`: start a patch job in a disposable worktree
@@ -236,7 +240,9 @@ exploration phases when the policy threshold says the follow-up is large enough:
 
 1. Call `local_agent_delegate_policy`.
 2. Start a bounded read-only scout job with `local_agent_delegate_run_start`.
-3. Wait with `local_agent_delegate_job_wait` and `include_details=false`.
+3. Wait with `local_agent_delegate_job_wait` and `include_details=false` before
+   primary-agent code-index, `rg`, `find`, `ls`, `sed`, `cat`, or other local
+   file exploration.
 4. Read the compact result first.
 5. Verify only the specific files, symbols, commands, or claims that matter.
 6. If a new broad subtask remains, compare it to `redelegation_threshold`.
@@ -248,9 +254,9 @@ exploration phases when the policy threshold says the follow-up is large enough:
 9. Use `include_details=true` only to diagnose failed or off-track jobs.
 10. Escalate `thinking` only after the scope is narrow.
 
-Avoid running broad local `find`, `rg`, `sed`, or `cat` exploration in the
-supervising agent while the delegated job is doing the same exploration. That
-duplicates context instead of saving it.
+Avoid running primary-agent local file exploration, including direct "focused
+checks", while the delegated job is running. That duplicates context instead of
+saving it.
 
 The `counters.estimated_primary_tokens_avoided_approx` field is a heuristic
 based on raw backend stream bytes minus delivered assistant text, using a coarse

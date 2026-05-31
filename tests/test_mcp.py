@@ -106,11 +106,37 @@ class McpTests(unittest.TestCase):
                 self.assertIn("session", policy["session_behavior"])
                 self.assertIn("bundled delegate scout", policy["backend_resource_mode"])
                 self.assertIn("wait", policy["workflow_guidance"])
+                self.assertIn("Mandatory wait-first", policy["workflow_guidance"])
+                self.assertIn("local_agent_delegate_job_wait", policy["post_start_guidance"])
+                self.assertIn("Do not start direct focused checks", policy["post_start_guidance"])
+                self.assertIs(policy["parallel_primary_work_allowed"], False)
                 self.assertIn("backend was insufficient", policy["verification_budget"])
                 self.assertIn("2+ file reads/searches", policy["redelegation_threshold"])
-                self.assertIn("Scout -> verify", policy["delegation_loop"])
+                self.assertIn("Scout -> wait", policy["delegation_loop"])
                 self.assertIn("Lower", policy["goal_redelegation_guidance"])
                 self.assertIn("Re-delegate", policy["level_redelegation_guidance"])
+
+    def test_save_on_tokens_start_includes_wait_first_guidance(self) -> None:
+        body = """cat <<'JSON'
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"ok\\n"}]}}
+JSON
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_pi = write_fake_pi(tmp, body)
+            with Env(
+                LOCAL_AGENT_DELEGATE_GOAL="save-on-tokens",
+                LOCAL_AGENT_DELEGATE_PI_BIN=str(fake_pi),
+                LOCAL_AGENT_DELEGATE_ARTIFACT_ROOT=str(Path(tmp) / "artifacts"),
+                LOCAL_AGENT_DELEGATE_MODEL=None,
+            ):
+                started = handle_tool("local_agent_delegate_run_start", {"prompt": "say hi", "cwd": tmp, "timeout": 5})
+                self.assertEqual(started["goal"], "save-on-tokens")
+                self.assertIs(started["parallel_primary_work_allowed"], False)
+                self.assertIn("local_agent_delegate_job_wait", started["next_action"])
+                self.assertIn("Do not start direct focused checks", started["workflow_note"])
+                self.assertIn("primary-agent CodeGraph", started["workflow_note"])
+                status = wait_for_job(str(started["job_id"]))
+                self.assertEqual(status["state"], "succeeded")
 
     def test_async_run_returns_compact_result_and_artifacts(self) -> None:
         body = """cat <<'JSON'

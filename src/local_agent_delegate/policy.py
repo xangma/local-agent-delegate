@@ -29,16 +29,30 @@ GUIDANCE = {
 
 GOAL_GUIDANCE = {
     "balanced": "Use the backend when it is likely to save time or provide useful confidence; keep delegated tasks and returned results scoped.",
-    "save-on-tokens": "Use the backend for token-heavy local exploration; after starting a delegated job, wait for the compact result before broad primary-agent CodeGraph, rg, find, ls, sed, or cat exploration.",
+    "save-on-tokens": "Use the backend for token-heavy local exploration; after starting a delegated job, wait for the compact result before primary-agent CodeGraph, rg, find, ls, sed, cat, or other local file exploration.",
     "parallel-review": "Use the backend as an independent second opinion while the primary agent may continue local work; expect less token saving but better wall-clock overlap and confidence.",
     "unrestricted": "Let the backend explore broadly within the explicit task and safety rules; optimize for local-model work over primary-agent token economy.",
 }
 
 GOAL_WORKFLOW_GUIDANCE = {
     "balanced": "Delegate bounded exploration when useful, then verify the returned files or claims before relying on them.",
-    "save-on-tokens": "Call local_agent_delegate_run_start, then local_agent_delegate_job_wait with include_details=false. Do not run broad primary-agent exploration until the delegated job returns a compact result or is clearly off-track.",
+    "save-on-tokens": "Mandatory wait-first workflow: call local_agent_delegate_run_start, then immediately call local_agent_delegate_job_wait with include_details=false. Do not run primary-agent CodeGraph, rg, find, ls, sed, cat, or other local file exploration while the delegated job is running unless the user explicitly requested parallel work.",
     "parallel-review": "Run the backend as an independent reviewer while the primary agent may continue useful work; compare conclusions before finalizing.",
     "unrestricted": "Let the backend perform broad local-model work within the explicit task and safety rules; keep final evidence review in the primary agent.",
+}
+
+GOAL_POST_START_GUIDANCE = {
+    "balanced": "Wait for or poll this job, then verify the returned files or claims before relying on them.",
+    "save-on-tokens": "save-on-tokens is active: call local_agent_delegate_job_wait with include_details=false before primary-agent CodeGraph, rg, find, ls, sed, cat, or other local file exploration. Do not start direct focused checks in parallel unless the user explicitly requested parallel work or this job has returned, failed, timed out, or is clearly off-track.",
+    "parallel-review": "Parallel review is active: the primary agent may continue useful local work, then compare conclusions with the delegated result before finalizing.",
+    "unrestricted": "Poll or wait for this job, then verify important claims before final conclusions.",
+}
+
+PARALLEL_PRIMARY_WORK_ALLOWED = {
+    "balanced": True,
+    "save-on-tokens": False,
+    "parallel-review": True,
+    "unrestricted": True,
 }
 
 LEVEL_REDELEGATION_GUIDANCE = {
@@ -71,7 +85,7 @@ SAVE_ON_TOKENS_REDELEGATION_THRESHOLDS = {
 
 GOAL_VERIFICATION_BUDGET = {
     "balanced": "Verify the specific files, symbols, commands, or claims needed for confidence.",
-    "save-on-tokens": "After the delegated job returns, verify only the named files, symbols, commands, or claims needed for correctness. If broad exploration is still needed, state that the backend was insufficient and why before continuing.",
+    "save-on-tokens": "Only after the delegated job returns, fails, times out, or is clearly off-track, verify the named files, symbols, commands, or claims needed for correctness. If broader exploration is still needed, state that the backend was insufficient and why before continuing.",
     "parallel-review": "Use verification to resolve disagreements between the backend and the primary agent.",
     "unrestricted": "Verify safety-sensitive claims and any patch or command output before presenting conclusions.",
 }
@@ -145,7 +159,15 @@ def redelegation_threshold(level: str, goal: str) -> str:
     return REDELEGATION_THRESHOLDS[level]
 
 
-def policy_summary() -> dict[str, str | int]:
+def parallel_primary_work_allowed(goal: str) -> bool:
+    return PARALLEL_PRIMARY_WORK_ALLOWED[goal]
+
+
+def post_start_guidance(goal: str) -> str:
+    return GOAL_POST_START_GUIDANCE[goal]
+
+
+def policy_summary() -> dict[str, str | int | bool]:
     level = current_level()
     goal = current_goal()
     thinking = current_thinking()
@@ -157,11 +179,13 @@ def policy_summary() -> dict[str, str | int]:
         "goal": goal,
         "goal_guidance": GOAL_GUIDANCE[goal],
         "workflow_guidance": GOAL_WORKFLOW_GUIDANCE[goal],
+        "post_start_guidance": post_start_guidance(goal),
+        "parallel_primary_work_allowed": parallel_primary_work_allowed(goal),
         "verification_budget": GOAL_VERIFICATION_BUDGET[goal],
         "level_redelegation_guidance": LEVEL_REDELEGATION_GUIDANCE[level],
         "goal_redelegation_guidance": GOAL_REDELEGATION_GUIDANCE[goal],
         "redelegation_threshold": redelegation_threshold(level, goal),
-        "delegation_loop": "Scout -> verify named evidence -> before each new exploration phase, compare expected reads/searches to redelegation_threshold -> re-delegate if the threshold is met.",
+        "delegation_loop": "Scout -> wait for compact result -> verify named evidence -> before each new exploration phase, compare expected reads/searches to redelegation_threshold -> re-delegate if the threshold is met.",
         "allowed_goals": ", ".join(ALLOWED_GOALS),
         "default_goal": DEFAULT_GOAL,
         "thinking": thinking,

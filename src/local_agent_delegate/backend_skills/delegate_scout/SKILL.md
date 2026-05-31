@@ -24,6 +24,9 @@ findings.
   exploration; the caller can surface them as a `partial_timeout` result.
 - When useful, include 1-3 narrow follow-up delegation prompts for the supervising
   agent to run next.
+- Frame follow-up checks as work to do after your compact result is returned;
+  do not suggest that the supervising agent duplicate your local exploration in
+  parallel when the goal is token saving.
 - Do not make final correctness decisions for the supervising agent.
 - For patch tasks, make the smallest coherent change and summarize changed
   files plus checks run.

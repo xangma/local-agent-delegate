@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-agent-delegate"
-version = "0.3.0"
+version = "0.3.1"
 description = "Unofficial MCP server for delegating local coding-agent work to a configured local agent backend."
 requires-python = ">=3.10"
 dependencies = []
